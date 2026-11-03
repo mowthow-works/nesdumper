@@ -234,7 +234,8 @@
           <button id="btnDiag" class="btn" disabled>🔄 バンク切替診断</button>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 8px;">
-          💡 <strong>診断ガイド</strong>: 「🔍 全ピン接触診断」はカセットを挿して実行（端子の接触不良検出）、「⚡ 配線・短絡診断」はカセット未挿入時に実行（誤配線・ショート検出）してください。
+          💡 <strong>診断ガイド</strong>: 「🔍 全ピン接触診断」はカセットを挿して実行（端子の接触不良検出）、「⚡ 配線・短絡診断」はカセット未挿入時に実行（誤配線・ショート検出）してください。<br>
+          <span style="color: #94a3b8;">※VRC4等の1KB単位CHRバンク切替マッパー（パロディウスだ！等）では、未初期化時にPPU_A10〜A12がFAIL_ALIASと検出されるのは仕様上正常です。</span>
         </p>
       </div>
 
@@ -253,6 +254,7 @@
             <option value="smb1" selected>スーパーマリオブラザーズ (NROM-256 / 32KB PRG + 8KB CHR / 垂直ミラー)</option>
             <option value="famista88">プロ野球ファミリースタジアム'88 (高互換 Mapper 4 / 128KB PRG + 64KB CHR / 垂直ミラー)</option>
             <option value="smb3">スーパーマリオブラザーズ3 (Mapper 4 MMC3 / 256KB PRG + 128KB CHR)</option>
+            <option value="parodius">パロディウスだ！ (Mapper 23 VRC4e / 128KB PRG + 128KB CHR / 垂直ミラー)</option>
             <option value="nrom256">NROM-256 (32KB PRG + 8KB CHR) 例: マリオ等</option>
             <option value="custom">カスタム設定</option>
           </select>
@@ -292,6 +294,7 @@
                 <option value="1">Mapper 1 (MMC1)</option>
                 <option value="3">Mapper 3 (CNROM バンク切替)</option>
                 <option value="4">Mapper 4 (MMC3)</option>
+                <option value="23">Mapper 23 (Konami VRC4e / パロディウスだ！等)</option>
                 <option value="185">Mapper 185 (CNROM セキュリティプロテクト)</option>
                 <option value="206">Mapper 206 (Namcot 108/118 ファミスタ等)</option>
               </select>
@@ -443,6 +446,13 @@
         chrSizeSelect.value = '128';
         mapperSelect.value = '4'; // MMC3
         mirroringSelect.value = '0'; // Horizontal
+      } else if (presetSelect.value === 'parodius') {
+        customSettings.style.display = 'none';
+        outFileName.value = 'parodius_da.nes';
+        prgSizeSelect.value = '128';
+        chrSizeSelect.value = '128';
+        mapperSelect.value = '23'; // Mapper 23 (VRC4e)
+        mirroringSelect.value = '1'; // Vertical
       } else if (presetSelect.value === 'nrom256') {
         customSettings.style.display = 'none';
         outFileName.value = 'game_nrom256.nes';
@@ -1009,6 +1019,53 @@
           });
           prgData.set(fixedChunk, numPairs * 16384);
           await bufReader.readLineMatching('CRC ', 3000);
+        } else if (mapper === 23) {
+          // Konami VRC4e (Mapper 23 / パロディウスだ！) PRG-ROM Dump (e.g. 128KB = 16 x 8KB banks)
+          // PRG Mode 0 ($9008 = 00):
+          //   $8000-$9FFF: Switchable bank b (0..numBanks-3)
+          //   $C000-$FFFF: Fixed to last 2 banks (numBanks-2 and numBanks-1 = 16KB)
+          const numBanks = prgKB / 8;
+          log(`Konami VRC4e (Mapper 23) PRG-ROM (${prgKB}KB / ${numBanks}バンク) バンク切り替え吸い出し中...`);
+
+          // PRG mode 0 (write 00 to $9008)
+          await sendCommand('P 9008 00');
+          await new Promise(r => setTimeout(r, 20));
+          await bufReader.readLine(500);
+
+          // Read switchable banks (0 .. numBanks-3) at $8000
+          for (let b = 0; b < numBanks - 2; b++) {
+            await sendCommand(`P 8000 ${b.toString(16).padStart(2, '0')}`);
+            await new Promise(r => setTimeout(r, 10));
+            await bufReader.readLine(500);
+
+            await sendCommand('R 8000 2000');
+            const hdr = await bufReader.readLineMatching('OK ', 5000);
+            if (!hdr) throw new Error(`PRG バンク ${b} 開始応答が受信できませんでした`);
+
+            const chunk = await bufReader.readExactBytes(8192, (done, total) => {
+              const currentTotal = (b * 8192) + done;
+              const pct = Math.floor((currentTotal / prgBytesTotal) * 50);
+              progressBar.style.width = `${pct}%`;
+              progressLabel.textContent = `PRG バンク ${b+1}/${numBanks}: ${currentTotal} / ${prgBytesTotal} bytes (${pct * 2}%)`;
+            });
+            prgData.set(chunk, b * 8192);
+            await bufReader.readLineMatching('CRC ', 3000);
+          }
+
+          // Read fixed last 2 banks (16KB) at $C000-$FFFF
+          log(`PRG-ROM 固定バンク (最後16KB: $C000-$FFFF) 読み出し中...`);
+          await sendCommand('R C000 4000');
+          const fixedHdr = await bufReader.readLineMatching('OK ', 5000);
+          if (!fixedHdr) throw new Error('PRG 固定バンク開始応答が受信できませんでした');
+
+          const fixedChunk = await bufReader.readExactBytes(16384, (done, total) => {
+            const currentTotal = ((numBanks - 2) * 8192) + done;
+            const pct = Math.floor((currentTotal / prgBytesTotal) * 50);
+            progressBar.style.width = `${pct}%`;
+            progressLabel.textContent = `PRG 固定バンク: ${currentTotal} / ${prgBytesTotal} bytes (${pct * 2}%)`;
+          });
+          prgData.set(fixedChunk, (numBanks - 2) * 8192);
+          await bufReader.readLineMatching('CRC ', 3000);
         } else {
           // Standard PRG Read (NROM / CNROM)
           const prgCmd = `R ${prgStartAddr.toString(16).toUpperCase()} ${prgBytesTotal.toString(16).toUpperCase()}`;
@@ -1060,6 +1117,50 @@
               // R5 (1KB at $1C00)
               await sendCommand('P 8000 05'); await new Promise(r => setTimeout(r, 6)); await bufReader.readLine(500);
               await sendCommand(`P 8001 ${(base1k + 7).toString(16).padStart(2, '0')}`); await new Promise(r => setTimeout(r, 6)); await bufReader.readLine(500);
+
+              // Read 8KB ($0000-$1FFF)
+              await sendCommand('C 0000 2000');
+              const chrHdr = await bufReader.readLineMatching('OK ', 5000);
+              if (!chrHdr) throw new Error(`CHR チャンク ${c} 開始応答がありません`);
+
+              const chunk = await bufReader.readExactBytes(8192, (done, total) => {
+                const currentTotal = (c * 8192) + done;
+                const pct = 50 + Math.floor((currentTotal / chrBytesTotal) * 50);
+                progressBar.style.width = `${pct}%`;
+                progressLabel.textContent = `CHR チャンク ${c+1}/${num8k}: ${currentTotal} / ${chrBytesTotal} bytes (${pct}%)`;
+              });
+              chrData.set(chunk, c * 8192);
+              await bufReader.readLineMatching('CRC ', 3000);
+            }
+          } else if (mapper === 23) {
+            // Konami VRC4e (Mapper 23 / パロディウスだ！) CHR-ROM Dump (e.g. 128KB = 16 x 8KB chunks = 128 x 1KB banks)
+            // VRC4e: Ax=A2 (+4), Ay=A3 (+8)
+            const vrc4eChrRegs = [
+              { low: 'B000', high: 'B004' },
+              { low: 'B008', high: 'B00C' },
+              { low: 'C000', high: 'C004' },
+              { low: 'C008', high: 'C00C' },
+              { low: 'D000', high: 'D004' },
+              { low: 'D008', high: 'D00C' },
+              { low: 'E000', high: 'E004' },
+              { low: 'E008', high: 'E00C' }
+            ];
+            const num8k = chrKB / 8;
+            log(`Konami VRC4e (Mapper 23) CHR-ROM (${chrKB}KB / ${num8k}チャンク) バンク切り替え吸い出し中...`);
+
+            for (let c = 0; c < num8k; c++) {
+              const base1k = c * 8;
+              for (let s = 0; s < 8; s++) {
+                const bank = base1k + s;
+                const low = (bank & 0x0F).toString(16).padStart(2, '0');
+                const high = ((bank >> 4) & 0x1F).toString(16).padStart(2, '0');
+                await sendCommand(`P ${vrc4eChrRegs[s].low} ${low}`);
+                await new Promise(r => setTimeout(r, 6));
+                await bufReader.readLine(500);
+                await sendCommand(`P ${vrc4eChrRegs[s].high} ${high}`);
+                await new Promise(r => setTimeout(r, 6));
+                await bufReader.readLine(500);
+              }
 
               // Read 8KB ($0000-$1FFF)
               await sendCommand('C 0000 2000');
