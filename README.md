@@ -11,6 +11,7 @@ Arduino Mega 2560 と ファミリーコンピュータ（FC 60ピン）カセ�
   - **Mapper 93 (Sunsoft-1 / Sunsoft-2)**：『ファンタジーゾーン』等（128KB PRG + CHR-RAM、初期SUNSOFT-1基板 $6000 ＆ 後期SUNSOFT-3R基板 $CC75+b バス衝突完全回避両対応）
   - **Mapper 206 (Namcot 108/118)**：『プロ野球ファミリースタジアム'88』等（128KB PRG + 64KB CHR バンク切り替え）
   - **Mapper 185 (CNROM+SECURITY)**：『マイティボンジャック』等（32KB PRG + 8KB CHR プロテクト解除付き）
+  - **Mapper 73 (Konami VRC3)**：『沙羅曼蛇』等（128KB PRG + CHR-RAM、VRC3専用 $F000 バンク切り替え、全バンク統一読出対応）
   - **Mapper 87 (KONAMI-74*139/74)**：『ツインビー』等（32KB PRG + 16KB CHR $6000バンク切り替え）
 - `GOROman/nes-rom-reader` (`famidump v0.5 rev2`) のシリアル通信プロトコルとも完全互換性を持っています。
 
@@ -35,6 +36,7 @@ Arduino Mega 2560 と ファミリーコンピュータ（FC 60ピン）カセ�
 | **グラディウス** (コナミ) | 3 (KONAMI-CNROM / 810J02) | 32 KB / `9204A65D` | 32 KB (4バンク) / `DE963BEC` | `D8EFF0DF` | ✅ 100%一致 (垂直ミラー / 初期CHR注意) |
 | **パロディウスだ！** (コナミ) | 23 (VRC4e / 352396) | 128 KB (16バンク) / `E4CEEAD1` | 128 KB (128バンク) / `54DA5DC8` | `D467C0CC` | ✅ 100%一致 (垂直ミラー / VRC4e初期化対応) |
 | **ファンタジーゾーン** (サンソフト) | 93 (Sunsoft-1 / 2) | 128 KB (8バンク) / `10119E6B` | 0 KB (CHR-RAM) | `DD119B43` | ✅ 100%一致 (水平ミラー / $6000 & $CC75+b両対応) |
+| **沙羅曼蛇** (コナミ) | 73 (Konami VRC3) | 128 KB (8バンク) / `AC652B47` | 0 KB (CHR-RAM) | `AC652B47` | ✅ 100%一致 (水平ミラー / 全バンク$8000統一読出) |
 
 > [!IMPORTANT]
 > **AIエージェント / 次回セッション再開時の必読ドキュメント**

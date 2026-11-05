@@ -255,6 +255,7 @@
             <option value="famista88">プロ野球ファミリースタジアム'88 (高互換 Mapper 4 / 128KB PRG + 64KB CHR / 垂直ミラー)</option>
             <option value="smb3">スーパーマリオブラザーズ3 (Mapper 4 MMC3 / 256KB PRG + 128KB CHR)</option>
             <option value="parodius">パロディウスだ！ (Mapper 23 VRC4e / 128KB PRG + 128KB CHR / 垂直ミラー)</option>
+            <option value="salamander">沙羅曼蛇 (Mapper 73 Konami VRC3 / 128KB PRG + CHR-RAM / 水平ミラー)</option>
             <option value="fantasyzone">ファンタジーゾーン (Mapper 93 Sunsoft-2 / 128KB PRG + CHR-RAM / 水平ミラー)</option>
             <option value="nrom256">NROM-256 (32KB PRG + 8KB CHR) 例: マリオ等</option>
             <option value="custom">カスタム設定</option>
@@ -296,6 +297,7 @@
                 <option value="3">Mapper 3 (CNROM バンク切替)</option>
                 <option value="4">Mapper 4 (MMC3)</option>
                 <option value="23">Mapper 23 (Konami VRC4e / パロディウスだ！等)</option>
+                <option value="73">Mapper 73 (Konami VRC3 / 沙羅曼蛇等)</option>
                 <option value="93">Mapper 93 (Sunsoft-2 / ファンタジーゾーン等)</option>
                 <option value="185">Mapper 185 (CNROM セキュリティプロテクト)</option>
                 <option value="206">Mapper 206 (Namcot 108/118 ファミスタ等)</option>
@@ -455,6 +457,13 @@
         chrSizeSelect.value = '128';
         mapperSelect.value = '23'; // Mapper 23 (VRC4e)
         mirroringSelect.value = '1'; // Vertical
+      } else if (presetSelect.value === 'salamander') {
+        customSettings.style.display = 'none';
+        outFileName.value = 'salamander.nes';
+        prgSizeSelect.value = '128';
+        chrSizeSelect.value = '0'; // CHR-RAM (0 KB)
+        mapperSelect.value = '73'; // Mapper 73 (Konami VRC3)
+        mirroringSelect.value = '0'; // Horizontal
       } else if (presetSelect.value === 'fantasyzone') {
         customSettings.style.display = 'none';
         outFileName.value = 'fantasy_zone.nes';
@@ -1142,6 +1151,47 @@
           });
           prgData.set(fixedChunk, (numBanks - 1) * 16384);
           await bufReader.readLineMatching('CRC ', 3000);
+        } else if (mapper === 73) {
+          // Konami VRC3 (Mapper 73 / 沙羅曼蛇) PRG-ROM Dump (128KB = 8 x 16KB banks)
+          // VRC3 は $F000 への書き込みで下位3bit (0..7) が $8000-$BFFF にマップされます。
+          // 固定バンク ($C000-$FFFF) は $C000-$CFFF の領域でチップセレクト/デコード等の影響により
+          // 0xFE 未応答となる現象を回避するため、Bank 7 を含む全8バンクを $8000-$BFFF 経由で統一吸い出しします。
+          const numBanks = Math.max(1, Math.floor(prgKB / 16));
+          log(`Konami VRC3 (Mapper 73) PRG-ROM (${prgKB}KB / ${numBanks}バンク) バンク切り替え吸い出し中...`);
+
+          // Read all banks (0 .. numBanks-1) at $8000
+          for (let b = 0; b < numBanks; b++) {
+            const val = (b & 0x07).toString(16).padStart(2, '0');
+            log(`[Mapper 73] バンク ${b} へ切り替え ($F000 に 0x${val} を書き込み)`);
+            await sendCommand(`P F000 ${val}`);
+            await new Promise(r => setTimeout(r, 20));
+            await bufReader.readLine(500);
+
+            await sendCommand('R 8000 4000');
+            const hdr = await bufReader.readLineMatching('OK ', 5000);
+            if (!hdr) throw new Error(`PRG バンク ${b} 開始応答が受信できませんでした`);
+
+            const chunk = await bufReader.readExactBytes(16384, (done, total) => {
+              const currentTotal = (b * 16384) + done;
+              const pct = Math.floor((currentTotal / prgBytesTotal) * 50);
+              progressBar.style.width = `${pct}%`;
+              progressLabel.textContent = `PRG バンク ${b+1}/${numBanks}: ${currentTotal} / ${prgBytesTotal} bytes (${pct * 2}%)`;
+            });
+            prgData.set(chunk, b * 16384);
+            await bufReader.readLineMatching('CRC ', 3000);
+
+            const bCrc = computeCrc32Hex(chunk);
+            const headHex = Array.from(chunk.subarray(0, 8)).map(x => x.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+            log(`  -> バンク ${b} (16KB) 完了 | CRC32: ${bCrc} | 先頭: [${headHex}]`);
+          }
+
+          const prgCrc = computeCrc32Hex(prgData);
+          log(`\nPRG-ROM 全8バンク完了 (128KB) | PRG CRC32: ${prgCrc}`);
+          if (prgCrc === 'AC652B47') {
+            log('🎉 【完全一致判定】沙羅曼蛇 正規PRG-ROM CRC32 (AC652B47) と100%完全一致しました！');
+          } else {
+            log(`ℹ️ 正規期待値: AC652B47 / 吸い出し値: ${prgCrc}`);
+          }
         } else {
           // Standard PRG Read (NROM / CNROM)
           const prgCmd = `R ${prgStartAddr.toString(16).toUpperCase()} ${prgBytesTotal.toString(16).toUpperCase()}`;
