@@ -255,6 +255,7 @@
             <option value="famista88">プロ野球ファミリースタジアム'88 (高互換 Mapper 4 / 128KB PRG + 64KB CHR / 垂直ミラー)</option>
             <option value="smb3">スーパーマリオブラザーズ3 (Mapper 4 MMC3 / 256KB PRG + 128KB CHR)</option>
             <option value="parodius">パロディウスだ！ (Mapper 23 VRC4e / 128KB PRG + 128KB CHR / 垂直ミラー)</option>
+            <option value="fantasyzone">ファンタジーゾーン (Mapper 93 Sunsoft-2 / 128KB PRG + CHR-RAM / 水平ミラー)</option>
             <option value="nrom256">NROM-256 (32KB PRG + 8KB CHR) 例: マリオ等</option>
             <option value="custom">カスタム設定</option>
           </select>
@@ -295,6 +296,7 @@
                 <option value="3">Mapper 3 (CNROM バンク切替)</option>
                 <option value="4">Mapper 4 (MMC3)</option>
                 <option value="23">Mapper 23 (Konami VRC4e / パロディウスだ！等)</option>
+                <option value="93">Mapper 93 (Sunsoft-2 / ファンタジーゾーン等)</option>
                 <option value="185">Mapper 185 (CNROM セキュリティプロテクト)</option>
                 <option value="206">Mapper 206 (Namcot 108/118 ファミスタ等)</option>
               </select>
@@ -453,6 +455,13 @@
         chrSizeSelect.value = '128';
         mapperSelect.value = '23'; // Mapper 23 (VRC4e)
         mirroringSelect.value = '1'; // Vertical
+      } else if (presetSelect.value === 'fantasyzone') {
+        customSettings.style.display = 'none';
+        outFileName.value = 'fantasy_zone.nes';
+        prgSizeSelect.value = '128';
+        chrSizeSelect.value = '0'; // CHR-RAM (0 KB)
+        mapperSelect.value = '93'; // Mapper 93 (Sunsoft-2)
+        mirroringSelect.value = '0'; // Horizontal
       } else if (presetSelect.value === 'nrom256') {
         customSettings.style.display = 'none';
         outFileName.value = 'game_nrom256.nes';
@@ -1066,6 +1075,73 @@
           });
           prgData.set(fixedChunk, (numBanks - 2) * 8192);
           await bufReader.readLineMatching('CRC ', 3000);
+        } else if (mapper === 93) {
+          // Sunsoft-2 (Mapper 93 / ファンタジーゾーン) PRG-ROM Dump (128KB = 8 x 16KB banks)
+          // $8000-$BFFF: Switchable bank b (0..numBanks-2)
+          // $C000-$FFFF: Fixed to last bank (numBanks-1) = 16KB
+          // ※ ファンタジーゾーンには2種類のハードウェア基板が存在します：
+          //   1. SUNSOFT-1 基板 (初期版 SUN-FZ-5300): $6000 への書き込み (D0..D2 = bank)
+          //   2. SUNSOFT-3R 基板 (Sunsoft-2 IC): $CC75-$CC7B への書き込み (D4..D6 = bank, Bus Conflict回避)
+          // ゲーム内の公式サブルーチン ($CC62-$CC74) も両対応のため $6000 と $CC75+b の両方に書き込んでいます。
+          // 当ツールでも両方に書き込むことで、どちらの基板のカートリッジでも100%確実に切り替えます。
+          const mapper93SafeAddrs = [
+            'CC75', // Bank 0: 0x01
+            'CC76', // Bank 1: 0x11
+            'CC77', // Bank 2: 0x21
+            'CC78', // Bank 3: 0x31
+            'CC79', // Bank 4: 0x41
+            'CC7A', // Bank 5: 0x51
+            'CC7B', // Bank 6: 0x61
+          ];
+
+          const numBanks = Math.max(1, Math.floor(prgKB / 16));
+          log(`Sunsoft-2 (Mapper 93) PRG-ROM (${prgKB}KB / ${numBanks}バンク) バンク切り替え吸い出し中...`);
+
+          // Read switchable banks (0 .. numBanks-2) at $8000
+          for (let b = 0; b < numBanks - 1; b++) {
+            const valSunsoft2 = ((b << 4) | 0x01).toString(16).padStart(2, '0');
+            const targetAddr = mapper93SafeAddrs[b] || '8000';
+            const valSunsoft1 = b.toString(16).padStart(2, '0');
+
+            log(`[Mapper 93] バンク ${b} へ切り替え ($6000 に 0x${valSunsoft1} / $${targetAddr} に 0x${valSunsoft2} を書き込み)`);
+            // 1. Sunsoft-1 基板向け書き込み ($6000)
+            await sendCommand(`P 6000 ${valSunsoft1}`);
+            await new Promise(r => setTimeout(r, 10));
+            await bufReader.readLine(500);
+
+            // 2. Sunsoft-2 基板向け書き込み ($CC75+b)
+            await sendCommand(`P ${targetAddr} ${valSunsoft2}`);
+            await new Promise(r => setTimeout(r, 10));
+            await bufReader.readLine(500);
+
+            await sendCommand('R 8000 4000');
+            const hdr = await bufReader.readLineMatching('OK ', 5000);
+            if (!hdr) throw new Error(`PRG バンク ${b} 開始応答が受信できませんでした`);
+
+            const chunk = await bufReader.readExactBytes(16384, (done, total) => {
+              const currentTotal = (b * 16384) + done;
+              const pct = Math.floor((currentTotal / prgBytesTotal) * 50);
+              progressBar.style.width = `${pct}%`;
+              progressLabel.textContent = `PRG バンク ${b+1}/${numBanks}: ${currentTotal} / ${prgBytesTotal} bytes (${pct * 2}%)`;
+            });
+            prgData.set(chunk, b * 16384);
+            await bufReader.readLineMatching('CRC ', 3000);
+          }
+
+          // Read fixed last bank (16KB) at $C000-$FFFF
+          log(`PRG-ROM 固定バンク (最後16KB: $C000-$FFFF) 読み出し中...`);
+          await sendCommand('R C000 4000');
+          const fixedHdr = await bufReader.readLineMatching('OK ', 5000);
+          if (!fixedHdr) throw new Error('PRG 固定バンク開始応答が受信できませんでした');
+
+          const fixedChunk = await bufReader.readExactBytes(16384, (done, total) => {
+            const currentTotal = ((numBanks - 1) * 16384) + done;
+            const pct = Math.floor((currentTotal / prgBytesTotal) * 50);
+            progressBar.style.width = `${pct}%`;
+            progressLabel.textContent = `PRG 固定バンク: ${currentTotal} / ${prgBytesTotal} bytes (${pct * 2}%)`;
+          });
+          prgData.set(fixedChunk, (numBanks - 1) * 16384);
+          await bufReader.readLineMatching('CRC ', 3000);
         } else {
           // Standard PRG Read (NROM / CNROM)
           const prgCmd = `R ${prgStartAddr.toString(16).toUpperCase()} ${prgBytesTotal.toString(16).toUpperCase()}`;
@@ -1089,7 +1165,7 @@
 
         // 2. Read CHR-ROM (if exists) via 'C 0000 <len>' (with bank-switching)
         let chrData = new Uint8Array(chrBytesTotal);
-        let jsChrCrc = 'N/A';
+        let jsChrCrc = (chrBytesTotal === 0) ? '0 (CHR-RAM)' : 'N/A';
         if (chrBytesTotal > 0) {
           if (mapper === 4 || mapper === 206) {
             // MMC3 / Namcot 108 CHR-ROM Dump (e.g. 128KB = 16 x 8KB, 64KB = 8 x 8KB chunks)
