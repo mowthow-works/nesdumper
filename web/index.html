@@ -259,6 +259,7 @@
             <option value="fantasyzone">ファンタジーゾーン (Mapper 93 Sunsoft-2 / 128KB PRG + CHR-RAM / 水平ミラー)</option>
             <option value="spartanx">スパルタンX (Mapper 0 NROM-256 / 32KB PRG + 8KB CHR / 垂直ミラー)</option>
             <option value="challenger">チャレンジャー (Mapper 0 NROM-256 / 32KB PRG + 8KB CHR / 水平ミラー)</option>
+            <option value="starforce">スターフォース (Mapper 0 NROM-128 / 16KB PRG + 8KB CHR / 垂直ミラー)</option>
             <option value="nrom256">NROM-256 (32KB PRG + 8KB CHR) 例: マリオ等</option>
             <option value="custom">カスタム設定</option>
           </select>
@@ -487,6 +488,13 @@
         chrSizeSelect.value = '8';
         mapperSelect.value = '0';
         mirroringSelect.value = '0'; // Horizontal
+      } else if (presetSelect.value === 'starforce') {
+        customSettings.style.display = 'none';
+        outFileName.value = 'star_force.nes';
+        prgSizeSelect.value = '16';
+        chrSizeSelect.value = '8';
+        mapperSelect.value = '0';
+        mirroringSelect.value = '1'; // Vertical
       } else if (presetSelect.value === 'nrom256') {
         customSettings.style.display = 'none';
         outFileName.value = 'game_nrom256.nes';
