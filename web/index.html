@@ -257,6 +257,7 @@
             <option value="parodius">パロディウスだ！ (Mapper 23 VRC4e / 128KB PRG + 128KB CHR / 垂直ミラー)</option>
             <option value="salamander">沙羅曼蛇 (Mapper 73 Konami VRC3 / 128KB PRG + CHR-RAM / 水平ミラー)</option>
             <option value="fantasyzone">ファンタジーゾーン (Mapper 93 Sunsoft-2 / 128KB PRG + CHR-RAM / 水平ミラー)</option>
+            <option value="spartanx">スパルタンX (Mapper 0 NROM-256 / 32KB PRG + 8KB CHR / 垂直ミラー)</option>
             <option value="nrom256">NROM-256 (32KB PRG + 8KB CHR) 例: マリオ等</option>
             <option value="custom">カスタム設定</option>
           </select>
@@ -471,6 +472,13 @@
         chrSizeSelect.value = '0'; // CHR-RAM (0 KB)
         mapperSelect.value = '93'; // Mapper 93 (Sunsoft-2)
         mirroringSelect.value = '0'; // Horizontal
+      } else if (presetSelect.value === 'spartanx') {
+        customSettings.style.display = 'none';
+        outFileName.value = 'spartan_x.nes';
+        prgSizeSelect.value = '32';
+        chrSizeSelect.value = '8';
+        mapperSelect.value = '0';
+        mirroringSelect.value = '1'; // Vertical
       } else if (presetSelect.value === 'nrom256') {
         customSettings.style.display = 'none';
         outFileName.value = 'game_nrom256.nes';
